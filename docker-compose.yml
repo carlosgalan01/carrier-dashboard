@@ -1,0 +1,13 @@
+version: "3.8"
+services:
+  dashboard:
+    build: .
+    ports:
+      - "8000:8000"   # FastAPI API
+      - "8501:8501"   # Streamlit Dashboard
+    environment:
+      - API_KEY=${API_KEY:-dev-key-change-me}
+      - DATABASE_URL=sqlite:///./data/calls.db
+      - API_BASE_URL=http://localhost:8000
+    volumes:
+      - ./data:/app/data
