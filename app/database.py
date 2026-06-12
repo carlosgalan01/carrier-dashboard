@@ -6,7 +6,7 @@ from app.models import Base
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./calls.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data/calls.db")
 
 engine = create_engine(
     DATABASE_URL,

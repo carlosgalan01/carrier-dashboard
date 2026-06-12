@@ -1,9 +1,11 @@
-import os
+﻿import os
 import json
 from fastapi import FastAPI, Request, HTTPException, Depends
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
+from pathlib import Path
 
 from app.database import init_db, get_db
 from app.models import CallRecord
@@ -24,6 +26,7 @@ app.add_middleware(
 )
 
 API_KEY = os.getenv("API_KEY", "dev-key-change-me")
+TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 
 def verify_api_key(request: Request):
     key = request.headers.get("x-api-key") or request.query_params.get("api_key")
@@ -34,7 +37,11 @@ def verify_api_key(request: Request):
 def startup():
     init_db()
 
-# ── Webhook endpoint (receives data from HappyRobot) ──
+@app.get("/")
+def dashboard():
+    return FileResponse(TEMPLATES_DIR / "index.html")
+
+# Webhook endpoint: receives data from HappyRobot.
 
 @app.post("/webhook/call-completed")
 async def receive_call_data(request: Request, db: Session = Depends(get_db)):
@@ -89,7 +96,7 @@ async def receive_call_data(request: Request, db: Session = Depends(get_db)):
     db.commit()
     return {"status": "ok", "run_id": body.get("run_id")}
 
-# ── API endpoints (serves data to dashboard) ──
+# API endpoints: serve data to the dashboard.
 
 @app.get("/api/calls")
 def get_calls(
@@ -147,7 +154,7 @@ def get_stats(db: Session = Depends(get_db), _: None = Depends(verify_api_key)):
 def health():
     return {"status": "healthy"}
 
-# ── Helpers ──
+# Helpers.
 
 def _safe_int(val):
     try:
@@ -190,3 +197,5 @@ def _serialize(record: CallRecord) -> dict:
         "carrier_sentiment": record.carrier_sentiment,
         "sentiment_notes": record.sentiment_notes,
     }
+
+
