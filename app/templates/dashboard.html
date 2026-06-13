@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -341,7 +341,7 @@
         <h2>Recent Calls</h2>
       </div>
       <div class="filter-pills" id="filterPills"></div>
-      <div class="scroll-hint">← Scroll horizontally to see all columns →</div>
+      <div class="scroll-hint">â† Scroll horizontally to see all columns â†’</div>
       <div class="table-scroll">
         <table id="callsTable">
           <thead><tr id="tableHeader"></tr></thead>
@@ -390,8 +390,8 @@
       requested_human: 'Requested Human',
       other: 'Other'
     };
-    var SENTIMENT_COLORS = { positive: '#2dd4a7', neutral: '#e0a338', negative: '#f0506e' };
-    var SENTIMENT_EMOJI = { positive: '😊', neutral: '😐', negative: '😠' };
+    var SENTIMENT_COLORS = { positive: '#2dd4a7', neutral: '#e0a338', negative: '#f0506e', mixed: '#b18af0', unknown: '#64748b' };
+    var SENTIMENT_EMOJI = { positive: '+', neutral: '=', negative: '-', mixed: '~', unknown: '•' };
 
     var ICONS = {
       phone: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>',
@@ -441,7 +441,7 @@
 
     function relativeTime(isoString) {
       var t = new Date(isoString).getTime();
-      if (isNaN(t)) return '—';
+      if (isNaN(t)) return 'â€”';
       var diff = Date.now() - t;
       var mins = Math.floor(diff / 60000);
       if (mins < 1) return 'Just now';
@@ -479,6 +479,28 @@
       return OUTCOME_LABELS[o] || o.split('_').map(function (w) { return w.charAt(0).toUpperCase() + w.slice(1); }).join(' ');
     }
 
+    function parseMoney(value) {
+      if (value == null || value === '') return null;
+      if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+      var cleaned = String(value).replace(/[^0-9.-]/g, '');
+      if (!cleaned) return null;
+      var parsed = Number(cleaned);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    function formatMoney(value) {
+      var parsed = parseMoney(value);
+      return parsed == null ? 'â€”' : '$' + Math.round(parsed).toLocaleString('en-US');
+    }
+
+    function isSuccessfulOutcome(outcome) {
+      return outcome === 'load_accepted' || outcome === 'transferred_to_sales' || outcome === 'booked';
+    }
+
+    function outcomeColor(outcome) {
+      return OUTCOME_COLORS[outcome] || OUTCOME_COLORS.other;
+    }
+
     function orderedOutcomeKeys(outcomes) {
       var seen = {};
       var keys = [];
@@ -490,6 +512,22 @@
       });
       Object.keys(outcomes || {}).sort().forEach(function (k) {
         if (!seen[k] && (outcomes[k] || 0) > 0) keys.push(k);
+      });
+      return keys;
+    }
+
+    function orderedSentimentKeys(sentiments) {
+      var preferred = ['positive', 'neutral', 'negative', 'mixed', 'unknown'];
+      var seen = {};
+      var keys = [];
+      preferred.forEach(function (k) {
+        if ((sentiments[k] || 0) > 0) {
+          seen[k] = true;
+          keys.push(k);
+        }
+      });
+      Object.keys(sentiments || {}).sort().forEach(function (k) {
+        if (!seen[k] && (sentiments[k] || 0) > 0) keys.push(k);
       });
       return keys;
     }
@@ -537,7 +575,8 @@
       var s = state.stats;
       var total = s.total_calls || 0;
       var oc = s.outcomes || {};
-      var bookingRate = total ? (oc.load_accepted || 0) / total * 100 : 0;
+      var booked = (oc.load_accepted || 0) + (oc.transferred_to_sales || 0) + (oc.booked || 0);
+      var bookingRate = total ? booked / total * 100 : 0;
       var hungUp = oc.carrier_hung_up || 0;
       var reqHuman = oc.requested_human || 0;
       var abandonRate = total ? (hungUp + reqHuman) / total * 100 : 0;
@@ -548,7 +587,7 @@
           cls: classFor(bookingRate, [15, 30], false) },
         { key: 'abandon', label: 'Abandonment Rate', value: abandonRate, suffix: '%', decimal: true, icon: ICONS.alert,
           cls: classFor(abandonRate, [10, 20], true),
-          sub: hungUp + ' hung up · ' + reqHuman + ' requested human' },
+          sub: hungUp + ' hung up Â· ' + reqHuman + ' requested human' },
         { key: 'duration', label: 'Avg Duration', value: s.avg_duration_seconds || 0, isDuration: true, icon: ICONS.clock, cls: '' },
         { key: 'latency', label: 'Avg Latency P70', value: s.avg_latency_p70_ms || 0, suffix: 'ms', icon: ICONS.zap,
           cls: classFor(s.avg_latency_p70_ms || 0, [1000, 1500], true) },
@@ -662,21 +701,21 @@
     function renderScatterChart() {
       var cc = chartColors();
       var pts = state.calls.filter(function (c) {
-        return c.initial_rate_offered != null && c.final_agreed_rate != null;
+        return parseMoney(c.initial_rate_offered) != null && parseMoney(c.final_agreed_rate) != null;
       });
       var maxRate = pts.reduce(function (m, c) {
-        return Math.max(m, c.initial_rate_offered || 0, c.final_agreed_rate || 0);
+        return Math.max(m, parseMoney(c.initial_rate_offered) || 0, parseMoney(c.final_agreed_rate) || 0);
       }, 0) * 1.05 || 1000;
 
       var dataPoints = pts.map(function (c) {
         return {
-          x: c.initial_rate_offered, y: c.final_agreed_rate,
+          x: parseMoney(c.initial_rate_offered), y: parseMoney(c.final_agreed_rate),
           r: 4 + (c.negotiation_rounds || 0) * 2.5,
           _c: c
         };
       });
       var colors = pts.map(function (c) {
-        return c.call_outcome === 'load_accepted' ? '#2dd4a7' : '#f0506e';
+        return outcomeColor(c.call_outcome);
       });
 
       if (charts.scatter) charts.scatter.destroy();
@@ -707,8 +746,8 @@
                 label: function (ctx) {
                   var c = ctx.raw._c;
                   return [
-                    (c.origin || '?') + ' → ' + (c.destination || '?'),
-                    '$' + (c.initial_rate_offered || 0) + ' → $' + (c.final_agreed_rate || 0),
+                    (c.origin || '?') + ' â†’ ' + (c.destination || '?'),
+                    formatMoney(c.initial_rate_offered) + ' -> ' + formatMoney(c.final_agreed_rate),
                     (c.negotiation_rounds || 0) + ' rounds'
                   ];
                 }
@@ -736,7 +775,7 @@
     function renderSentimentChart() {
       var cc = chartColors();
       var s = state.stats.sentiments || {};
-      var keys = ['positive', 'neutral', 'negative'];
+      var keys = orderedSentimentKeys(s);
       var total = keys.reduce(function (a, k) { return a + (s[k] || 0); }, 0);
 
       if (charts.sentiment) charts.sentiment.destroy();
@@ -746,7 +785,7 @@
           labels: keys.map(function (k) { return k.charAt(0).toUpperCase() + k.slice(1); }),
           datasets: [{
             data: keys.map(function (k) { return s[k] || 0; }),
-            backgroundColor: keys.map(function (k) { return SENTIMENT_COLORS[k]; }),
+            backgroundColor: keys.map(function (k) { return SENTIMENT_COLORS[k] || SENTIMENT_COLORS.unknown; }),
             borderColor: cc.tooltipBg, borderWidth: 3
           }]
         },
@@ -789,9 +828,9 @@
       legend.innerHTML = '';
       keys.forEach(function (k) {
         var pill = el('div', { cls: 'pill' });
-        var sw = el('span', { cls: 'swatch' }); sw.style.background = SENTIMENT_COLORS[k];
+        var sw = el('span', { cls: 'swatch' }); sw.style.background = SENTIMENT_COLORS[k] || SENTIMENT_COLORS.unknown;
         pill.appendChild(sw);
-        pill.appendChild(el('span', { text: SENTIMENT_EMOJI[k] + ' ' + k.charAt(0).toUpperCase() + k.slice(1) }));
+        pill.appendChild(el('span', { text: (SENTIMENT_EMOJI[k] || SENTIMENT_EMOJI.unknown) + ' ' + k.charAt(0).toUpperCase() + k.slice(1) }));
         pill.appendChild(el('span', { cls: 'cnt', text: '(' + (s[k] || 0) + ')' }));
         legend.appendChild(pill);
       });
@@ -850,8 +889,10 @@
     ];
 
     function spreadValue(c) {
-      if (!c.initial_rate_offered || c.final_agreed_rate == null) return null;
-      return (c.final_agreed_rate - c.initial_rate_offered) / c.initial_rate_offered * 100;
+      var initial = parseMoney(c.initial_rate_offered);
+      var final = parseMoney(c.final_agreed_rate);
+      if (!initial || final == null) return null;
+      return (final - initial) / initial * 100;
     }
 
     function sortKey(c, key) {
@@ -867,7 +908,7 @@
         var th = el('th');
         th.appendChild(el('span', { text: col.label + ' ' }));
         if (state.sort.key === col.key) {
-          th.appendChild(el('span', { cls: 'arrow', text: state.sort.dir === 'asc' ? '▲' : '▼' }));
+          th.appendChild(el('span', { cls: 'arrow', text: state.sort.dir === 'asc' ? 'â–²' : 'â–¼' }));
         }
         th.addEventListener('click', function () {
           if (state.sort.key === col.key) {
@@ -932,30 +973,30 @@
         var tr = el('tr'); tr.appendChild(td); body.appendChild(tr);
       } else {
         pageRows.forEach(function (c, i) {
-          var tr = el('tr', { title: 'Run ID: ' + (c.run_id || '—') });
-          if (c.call_outcome === 'load_accepted') tr.className = 'row-accepted';
+          var tr = el('tr', { title: 'Run ID: ' + (c.run_id || 'â€”') });
+          if (isSuccessfulOutcome(c.call_outcome)) tr.className = 'row-accepted';
           else if (c.call_outcome === 'carrier_hung_up' || c.call_outcome === 'requested_human') tr.className = 'row-abandon';
           tr.style.animationDelay = (i * 50) + 'ms';
 
           // Time
           tr.appendChild(el('td', { cls: 'num', text: relativeTime(c.timestamp) }));
           // Carrier
-          tr.appendChild(el('td', { text: c.carrier_name || '—' }));
+          tr.appendChild(el('td', { text: c.carrier_name || 'â€”' }));
           // MC
-          tr.appendChild(el('td', { cls: 'num', text: c.mc_number || '—' }));
+          tr.appendChild(el('td', { cls: 'num', text: c.mc_number || 'â€”' }));
           // Lane
-          tr.appendChild(el('td', { text: (c.origin || '?') + ' → ' + (c.destination || '?') }));
+          tr.appendChild(el('td', { text: (c.origin || '?') + ' â†’ ' + (c.destination || '?') }));
           // Equipment
-          tr.appendChild(el('td', { text: prettyOutcome(c.equipment_type || '') || '—' }));
+          tr.appendChild(el('td', { text: prettyOutcome(c.equipment_type || '') || 'â€”' }));
           // Offered
-          tr.appendChild(el('td', { cls: 'num', text: c.initial_rate_offered != null ? '$' + c.initial_rate_offered : '—' }));
+          tr.appendChild(el('td', { cls: 'num', text: formatMoney(c.initial_rate_offered) }));
           // Final
-          tr.appendChild(el('td', { cls: 'num', text: c.final_agreed_rate != null ? '$' + c.final_agreed_rate : '—' }));
+          tr.appendChild(el('td', { cls: 'num', text: formatMoney(c.final_agreed_rate) }));
           // Spread
           var sv = spreadValue(c);
           var spreadTd = el('td', { cls: 'num' });
           if (sv == null) {
-            spreadTd.textContent = '—';
+            spreadTd.textContent = 'â€”';
           } else {
             var abs = Math.abs(sv);
             var cls = abs <= 5 ? 'good' : (abs <= 10 ? 'warn' : 'bad');
@@ -964,10 +1005,10 @@
           }
           tr.appendChild(spreadTd);
           // Rounds
-          tr.appendChild(el('td', { cls: 'num', text: c.negotiation_rounds != null ? String(c.negotiation_rounds) : '—' }));
+          tr.appendChild(el('td', { cls: 'num', text: c.negotiation_rounds != null ? String(c.negotiation_rounds) : 'â€”' }));
           // Outcome
           var outTd = el('td');
-          var oColor = OUTCOME_COLORS[c.call_outcome] || OUTCOME_COLORS.other;
+          var oColor = outcomeColor(c.call_outcome);
           var tag = el('span', { cls: 'tag' });
           tag.style.color = oColor;
           tag.style.borderColor = oColor;
@@ -980,7 +1021,7 @@
           tr.appendChild(outTd);
           // Sentiment
           var sent = c.carrier_sentiment || 'neutral';
-          var sentTd = el('td', { text: (SENTIMENT_EMOJI[sent] || '😐') + ' ' + sent });
+          var sentTd = el('td', { text: (SENTIMENT_EMOJI[sent] || 'ðŸ˜') + ' ' + sent });
           if (c.carrier_sentiment_notes) sentTd.title = c.carrier_sentiment_notes;
           tr.appendChild(sentTd);
 
@@ -1005,10 +1046,10 @@
 
     function fetchData() {
       if (!$('apiKey').value) { setStatus('error', 'Enter API key'); return Promise.resolve(); }
-      setStatus('', 'Loading…');
+      setStatus('', 'Loadingâ€¦');
       return Promise.all([
         fetch('/api/stats', { headers: headers() }).then(function (r) { if (!r.ok) throw new Error('stats'); return r.json(); }),
-        fetch('/api/calls?limit=100', { headers: headers() }).then(function (r) { if (!r.ok) throw new Error('calls'); return r.json(); })
+        fetch('/api/calls?limit=500', { headers: headers() }).then(function (r) { if (!r.ok) throw new Error('calls'); return r.json(); })
       ]).then(function (res) {
         state.stats = res[0];
         state.calls = (res[1] && res[1].calls) || [];
@@ -1102,3 +1143,4 @@
   </script>
 </body>
 </html>
+
