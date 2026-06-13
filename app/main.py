@@ -213,6 +213,58 @@ def seed_loads(_: None = Depends(verify_api_key)):
     return {"status": "ok", "loads_count": count}
 
 
+@app.get("/api/loads/search")
+def search_loads(
+    origin: str | None = None,
+    destination: str | None = None,
+    equipment_type: str | None = None,
+    limit: int = 5,
+    _: None = Depends(verify_api_key),
+):
+    query = """
+        SELECT
+            load_id, origin, destination, pickup_datetime, delivery_datetime,
+            equipment_type, loadboard_rate, notes, weight, commodity_type,
+            num_of_pieces, miles, dimensions
+        FROM loads
+        WHERE (:origin IS NULL OR origin ILIKE :origin_pattern)
+          AND (:destination IS NULL OR destination ILIKE :destination_pattern)
+          AND (:equipment_type IS NULL OR equipment_type ILIKE :equipment_pattern)
+        ORDER BY pickup_datetime ASC
+        LIMIT :limit
+    """
+    params = {
+        "origin": origin,
+        "origin_pattern": f"%{origin}%" if origin else None,
+        "destination": destination,
+        "destination_pattern": f"%{destination}%" if destination else None,
+        "equipment_type": equipment_type,
+        "equipment_pattern": f"%{equipment_type}%" if equipment_type else None,
+        "limit": min(max(limit, 1), 25),
+    }
+
+    rows = _query_loads_database(query, params)
+    return {"count": len(rows), "loads": rows}
+
+
+@app.get("/api/loads/{load_id}")
+def get_load(load_id: str, _: None = Depends(verify_api_key)):
+    rows = _query_loads_database(
+        """
+        SELECT
+            load_id, origin, destination, pickup_datetime, delivery_datetime,
+            equipment_type, loadboard_rate, notes, weight, commodity_type,
+            num_of_pieces, miles, dimensions
+        FROM loads
+        WHERE load_id = :load_id
+        """,
+        {"load_id": load_id},
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="Load not found")
+    return rows[0]
+
+
 @app.get("/events")
 async def events(request: Request, _: None = Depends(verify_api_key)):
     queue: asyncio.Queue[str] = asyncio.Queue()
@@ -260,6 +312,38 @@ def _normalize_database_url(url: str) -> str:
     if url.startswith("postgresql://"):
         return url.replace("postgresql://", "postgresql+psycopg2://", 1)
     return url
+
+
+def _loads_engine():
+    loads_database_url = os.getenv("LOADS_DATABASE_URL")
+    if not loads_database_url:
+        raise HTTPException(status_code=500, detail="LOADS_DATABASE_URL is not configured")
+    return create_engine(_normalize_database_url(loads_database_url))
+
+
+def _query_loads_database(query: str, params: dict) -> list[dict]:
+    engine = _loads_engine()
+    with engine.connect() as connection:
+        result = connection.execute(text(query), params)
+        return [_serialize_load_row(row._mapping) for row in result]
+
+
+def _serialize_load_row(row) -> dict:
+    return {
+        "load_id": row["load_id"],
+        "origin": row["origin"],
+        "destination": row["destination"],
+        "pickup_datetime": row["pickup_datetime"].isoformat() if row["pickup_datetime"] else None,
+        "delivery_datetime": row["delivery_datetime"].isoformat() if row["delivery_datetime"] else None,
+        "equipment_type": row["equipment_type"],
+        "loadboard_rate": float(row["loadboard_rate"]) if row["loadboard_rate"] is not None else None,
+        "notes": row["notes"],
+        "weight": row["weight"],
+        "commodity_type": row["commodity_type"],
+        "num_of_pieces": row["num_of_pieces"],
+        "miles": row["miles"],
+        "dimensions": row["dimensions"],
+    }
 
 
 def _serialize(record: CallRecord) -> dict:
