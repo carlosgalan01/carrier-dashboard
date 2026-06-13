@@ -154,9 +154,10 @@ Example body:
     "load_id": "LOAD-001",
     "origin": "Dallas, TX",
     "destination": "Atlanta, GA",
-    "initial_rate_offered": "2850",
+    "loadboard_rate": "2850",
+    "initial_rate_offered": "2600",
     "carrier_counter_offer": "3000",
-    "final_agreed_rate": "2900",
+    "final_agreed_rate": "2750",
     "equipment_type": "dry_van",
     "negotiation_rounds": "2"
   },

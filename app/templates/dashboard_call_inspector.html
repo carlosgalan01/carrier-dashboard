@@ -254,7 +254,7 @@
 
     .table-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
     .scroll-hint { display: none; font-size: 11px; color: var(--faint); margin-bottom: 8px; }
-    table { width: 100%; border-collapse: collapse; min-width: 880px; }
+    table { width: 100%; border-collapse: collapse; min-width: 1080px; }
     thead th {
       font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em;
       color: var(--faint); text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line);
@@ -457,7 +457,7 @@
       </div>
       <div class="panel chart-panel hoverable">
         <h2>Negotiation Performance</h2>
-        <div class="sub">Initial vs. final rate &mdash; bubble size = rounds</div>
+        <div class="sub">Loadboard vs. final rate &mdash; bubble size = rounds</div>
         <div class="negotiation-kpis" id="negotiationKpis"></div>
         <div class="chart-box" style="height:300px"><canvas id="scatterChart"></canvas></div>
       </div>
@@ -849,8 +849,9 @@
       addDetailCard(grid, 'Run ID', call.run_id || call.id || '-', { mono: true, wide: true });
       addDetailCard(grid, 'MC Number', call.mc_number || '-', { mono: true });
       addDetailCard(grid, 'Equipment', prettyOutcome(call.equipment_type || '') || '-');
-      addDetailCard(grid, 'Initial Offered', formatMoney(call.initial_rate_offered), { mono: true });
-      addDetailCard(grid, 'Carrier Counter', formatMoney(call.carrier_counter_offer), { mono: true });
+      addDetailCard(grid, 'Loadboard Rate', formatMoney(call.loadboard_rate), { mono: true });
+      addDetailCard(grid, 'Opening Offer', formatMoney(call.initial_rate_offered), { mono: true });
+      addDetailCard(grid, 'Carrier Ask', formatMoney(call.carrier_counter_offer), { mono: true });
       addDetailCard(grid, 'Final Agreed', formatMoney(call.final_agreed_rate), { mono: true });
       addDetailCard(grid, 'Negotiation Rounds', call.negotiation_rounds != null ? call.negotiation_rounds : '-', { mono: true });
       addDetailCard(grid, 'Origin', call.origin || '-');
@@ -1155,15 +1156,18 @@
       var cc = chartColors();
       renderNegotiationKpis();
       var pts = state.calls.filter(function (c) {
-        return parseMoney(c.initial_rate_offered) != null && parseMoney(c.final_agreed_rate) != null;
+        var baseline = parseMoney(c.loadboard_rate) != null ? parseMoney(c.loadboard_rate) : parseMoney(c.initial_rate_offered);
+        return baseline != null && parseMoney(c.final_agreed_rate) != null;
       });
       var maxRate = pts.reduce(function (m, c) {
-        return Math.max(m, parseMoney(c.initial_rate_offered) || 0, parseMoney(c.final_agreed_rate) || 0);
+        var baseline = parseMoney(c.loadboard_rate) != null ? parseMoney(c.loadboard_rate) : parseMoney(c.initial_rate_offered);
+        return Math.max(m, baseline || 0, parseMoney(c.final_agreed_rate) || 0);
       }, 0) * 1.05 || 1000;
 
       var dataPoints = pts.map(function (c) {
+        var baseline = parseMoney(c.loadboard_rate) != null ? parseMoney(c.loadboard_rate) : parseMoney(c.initial_rate_offered);
         return {
-          x: parseMoney(c.initial_rate_offered), y: parseMoney(c.final_agreed_rate),
+          x: baseline, y: parseMoney(c.final_agreed_rate),
           r: 4 + (c.negotiation_rounds || 0) * 2.5,
           _c: c
         };
@@ -1185,7 +1189,7 @@
         options: {
           responsive: true, maintainAspectRatio: false, animation: { duration: 400 },
           scales: {
-            x: { title: { display: true, text: 'Initial Rate Offered ($)', color: cc.text }, min: 0, max: maxRate,
+            x: { title: { display: true, text: 'Loadboard Rate ($)', color: cc.text }, min: 0, max: maxRate,
                  grid: { color: cc.grid }, ticks: { color: cc.text } },
             y: { title: { display: true, text: 'Final Agreed Rate ($)', color: cc.text }, min: 0, max: maxRate,
                  grid: { color: cc.grid }, ticks: { color: cc.text } }
@@ -1201,7 +1205,10 @@
                   var c = ctx.raw._c;
                   return [
                     (c.origin || '?') + ' -> ' + (c.destination || '?'),
-                    formatMoney(c.initial_rate_offered) + ' -> ' + formatMoney(c.final_agreed_rate),
+                    'Loadboard: ' + formatMoney(c.loadboard_rate),
+                    'Opening: ' + formatMoney(c.initial_rate_offered),
+                    'Carrier ask: ' + formatMoney(c.carrier_counter_offer),
+                    'Final: ' + formatMoney(c.final_agreed_rate),
                     (c.negotiation_rounds || 0) + ' rounds'
                   ];
                 }
@@ -1246,14 +1253,31 @@
         var final = parseMoney(c.final_agreed_rate);
         return ask > final ? sum + (ask - final) : sum;
       }, 0);
-      var accepted = state.calls.filter(function (c) { return isSuccessfulOutcome(c.call_outcome); }).length;
+      var savingsRows = state.calls.filter(function (c) {
+        var loadboard = parseMoney(c.loadboard_rate);
+        var final = parseMoney(c.final_agreed_rate);
+        return loadboard != null && final != null && loadboard > 0;
+      });
+      var savingsValues = savingsRows.map(function (c) {
+        var loadboard = parseMoney(c.loadboard_rate);
+        var final = parseMoney(c.final_agreed_rate);
+        return (loadboard - final) / loadboard * 100;
+      }).filter(function (v) { return Number.isFinite(v); });
+      var avgSavings = savingsValues.length
+        ? savingsValues.reduce(function (a, b) { return a + b; }, 0) / savingsValues.length
+        : 0;
+      var totalSavings = savingsRows.reduce(function (sum, c) {
+        var loadboard = parseMoney(c.loadboard_rate);
+        var final = parseMoney(c.final_agreed_rate);
+        return loadboard > final ? sum + (loadboard - final) : sum;
+      }, 0);
 
       var wrap = $('negotiationKpis');
       wrap.innerHTML = '';
       [
         { label: 'Avg Reduction vs Ask', value: avgReduction.toFixed(1) + '%', sub: positiveReductions.length + ' negotiated calls' },
         { label: 'Carrier Ask Reduced', value: formatMoney(totalReduction), sub: 'estimated total' },
-        { label: 'Successful Outcomes', value: String(accepted), sub: 'accepted or transferred' }
+        { label: 'Avg Savings vs Loadboard', value: avgSavings.toFixed(1) + '%', sub: formatMoney(totalSavings) + ' total saved' }
       ].forEach(function (item) {
         var card = el('div', { cls: 'neg-kpi' });
         card.appendChild(el('div', { cls: 'nk-label', text: item.label }));
@@ -1387,24 +1411,30 @@
       { key: 'mc_number', label: 'MC' },
       { key: 'lane', label: 'Lane' },
       { key: 'equipment_type', label: 'Equipment' },
-      { key: 'initial_rate_offered', label: 'Offered' },
+      { key: 'loadboard_rate', label: 'Loadboard' },
+      { key: 'initial_rate_offered', label: 'Opening' },
+      { key: 'carrier_counter_offer', label: 'Carrier Ask' },
       { key: 'final_agreed_rate', label: 'Final' },
-      { key: 'spread', label: 'Spread' },
+      { key: 'spread', label: 'Savings' },
       { key: 'negotiation_rounds', label: 'Rounds' },
       { key: 'call_outcome', label: 'Outcome' },
       { key: 'carrier_sentiment', label: 'Sentiment' }
     ];
 
     function spreadValue(c) {
-      var initial = parseMoney(c.initial_rate_offered);
+      var initial = parseMoney(c.loadboard_rate);
       var final = parseMoney(c.final_agreed_rate);
       if (!initial || final == null) return null;
-      return (final - initial) / initial * 100;
+      return (initial - final) / initial * 100;
     }
 
     function sortKey(c, key) {
       if (key === 'lane') return (c.origin || '') + (c.destination || '');
       if (key === 'spread') { var v = spreadValue(c); return v == null ? -Infinity : v; }
+      if (['loadboard_rate', 'initial_rate_offered', 'carrier_counter_offer', 'final_agreed_rate'].indexOf(key) !== -1) {
+        var money = parseMoney(c[key]);
+        return money == null ? -Infinity : money;
+      }
       return c[key];
     }
 
@@ -1530,18 +1560,21 @@
           tr.appendChild(el('td', { text: (c.origin || '?') + ' -> ' + (c.destination || '?') }));
           // Equipment
           tr.appendChild(el('td', { text: prettyOutcome(c.equipment_type || '') || '-' }));
-          // Offered
+          // Loadboard
+          tr.appendChild(el('td', { cls: 'num', text: formatMoney(c.loadboard_rate) }));
+          // Opening
           tr.appendChild(el('td', { cls: 'num', text: formatMoney(c.initial_rate_offered) }));
+          // Carrier Ask
+          tr.appendChild(el('td', { cls: 'num', text: formatMoney(c.carrier_counter_offer) }));
           // Final
           tr.appendChild(el('td', { cls: 'num', text: formatMoney(c.final_agreed_rate) }));
-          // Spread
+          // Savings vs loadboard
           var sv = spreadValue(c);
           var spreadTd = el('td', { cls: 'num' });
           if (sv == null) {
             spreadTd.textContent = '-';
           } else {
-            var abs = Math.abs(sv);
-            var cls = abs <= 5 ? 'good' : (abs <= 10 ? 'warn' : 'bad');
+            var cls = sv >= 5 ? 'good' : (sv >= 0 ? 'warn' : 'bad');
             var span = el('span', { cls: 'spread ' + cls, text: (sv >= 0 ? '+' : '') + sv.toFixed(1) + '%' });
             spreadTd.appendChild(span);
           }

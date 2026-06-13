@@ -29,6 +29,7 @@ class CallRecord(Base):
     load_id = Column(String, nullable=True)
     origin = Column(String, nullable=True)
     destination = Column(String, nullable=True)
+    loadboard_rate = Column(String, nullable=True)
     initial_rate_offered = Column(String, nullable=True)
     carrier_counter_offer = Column(String, nullable=True)
     final_agreed_rate = Column(String, nullable=True)
