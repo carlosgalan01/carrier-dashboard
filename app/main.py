@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
 from app.database import get_db, init_db
@@ -31,6 +32,45 @@ app.add_middleware(
 API_KEY = os.getenv("API_KEY", "dev-key-change-me")
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 event_subscribers: set[asyncio.Queue[str]] = set()
+LOADS_SEED_SQL = """
+CREATE TABLE IF NOT EXISTS loads (
+    load_id VARCHAR PRIMARY KEY,
+    origin VARCHAR NOT NULL,
+    destination VARCHAR NOT NULL,
+    pickup_datetime TIMESTAMP NOT NULL,
+    delivery_datetime TIMESTAMP NOT NULL,
+    equipment_type VARCHAR NOT NULL,
+    loadboard_rate NUMERIC NOT NULL,
+    notes TEXT,
+    weight INT NOT NULL,
+    commodity_type VARCHAR NOT NULL,
+    num_of_pieces INT,
+    miles INT NOT NULL,
+    dimensions VARCHAR
+);
+
+INSERT INTO loads (
+    load_id, origin, destination, pickup_datetime, delivery_datetime,
+    equipment_type, loadboard_rate, notes, weight, commodity_type,
+    num_of_pieces, miles, dimensions
+) VALUES
+('LOAD-001', 'Dallas, TX', 'Atlanta, GA', '2026-06-13 08:00:00', '2026-06-14 16:00:00', 'dry_van', 2850.00, 'No-touch freight. Dock-to-dock.', 42000, 'Consumer Electronics', 24, 781, '48x40x48 pallets'),
+('LOAD-002', 'Dallas, TX', 'Memphis, TN', '2026-06-13 06:00:00', '2026-06-13 18:00:00', 'dry_van', 1200.00, 'Same-day delivery preferred.', 38000, 'Paper Products', 30, 452, '48x40x60 pallets'),
+('LOAD-003', 'Houston, TX', 'Chicago, IL', '2026-06-14 10:00:00', '2026-06-16 08:00:00', 'reefer', 4200.00, 'Temperature must stay between 34-38F.', 44000, 'Fresh Produce', 18, 1092, '48x40x48 pallets'),
+('LOAD-004', 'Houston, TX', 'Miami, FL', '2026-06-13 14:00:00', '2026-06-15 10:00:00', 'reefer', 3600.00, 'Frozen goods. Keep at 0F.', 40000, 'Frozen Seafood', 22, 1187, '48x40x48 pallets'),
+('LOAD-005', 'San Antonio, TX', 'Phoenix, AZ', '2026-06-14 07:00:00', '2026-06-15 14:00:00', 'flatbed', 2100.00, 'Oversized. Tarps required.', 48000, 'Steel Beams', 8, 880, '40ft lengths'),
+('LOAD-006', 'Fort Worth, TX', 'Nashville, TN', '2026-06-13 09:00:00', '2026-06-14 12:00:00', 'dry_van', 1800.00, 'Appointment required at delivery.', 36000, 'Auto Parts', 40, 660, '48x40x42 pallets'),
+('LOAD-007', 'Austin, TX', 'Denver, CO', '2026-06-15 06:00:00', '2026-06-16 18:00:00', 'dry_van', 2400.00, 'Light freight but full trailer.', 22000, 'Furniture', 12, 935, '48x40x72 pallets'),
+('LOAD-008', 'El Paso, TX', 'Los Angeles, CA', '2026-06-13 12:00:00', '2026-06-14 20:00:00', 'flatbed', 1950.00, 'Must have chains and straps.', 45000, 'Construction Materials', 6, 800, 'Various oversized'),
+('LOAD-009', 'Laredo, TX', 'Dallas, TX', '2026-06-14 05:00:00', '2026-06-14 14:00:00', 'reefer', 1100.00, 'Cross-border freight. Customs cleared.', 35000, 'Fresh Avocados', 28, 438, '48x40x48 pallets'),
+('LOAD-010', 'Oklahoma City, OK', 'Houston, TX', '2026-06-13 11:00:00', '2026-06-14 08:00:00', 'dry_van', 1500.00, 'Driver assist unload.', 41000, 'Beverages', 32, 478, '48x40x48 pallets'),
+('LOAD-011', 'Little Rock, AR', 'San Antonio, TX', '2026-06-15 08:00:00', '2026-06-16 10:00:00', 'dry_van', 1650.00, 'No hazmat. Straightforward run.', 39000, 'Retail Goods', 26, 588, '48x40x54 pallets'),
+('LOAD-012', 'Jackson, MS', 'Fort Worth, TX', '2026-06-14 09:00:00', '2026-06-15 06:00:00', 'flatbed', 1750.00, 'Pipe load. Securement per DOT regs.', 46000, 'PVC Pipe', 1, 562, '20ft bundles'),
+('LOAD-013', 'New Orleans, LA', 'Atlanta, GA', '2026-06-13 07:00:00', '2026-06-14 09:00:00', 'reefer', 2200.00, 'Seafood. Temp at 32F.', 38000, 'Fresh Shrimp', 20, 470, '48x40x48 pallets'),
+('LOAD-014', 'Tulsa, OK', 'Kansas City, MO', '2026-06-14 06:00:00', '2026-06-14 14:00:00', 'dry_van', 850.00, 'Short haul. Quick turnaround.', 34000, 'Packaged Foods', 36, 248, '48x40x48 pallets'),
+('LOAD-015', 'Shreveport, LA', 'Memphis, TN', '2026-06-15 10:00:00', '2026-06-15 20:00:00', 'dry_van', 950.00, 'Drop and hook available.', 40000, 'Plastics', 28, 315, '48x40x48 pallets')
+ON CONFLICT (load_id) DO NOTHING;
+"""
 
 
 def verify_api_key(request: Request):
@@ -159,6 +199,20 @@ def get_stats(db: Session = Depends(get_db), _: None = Depends(verify_api_key)):
     }
 
 
+@app.post("/admin/seed-loads")
+def seed_loads(_: None = Depends(verify_api_key)):
+    loads_database_url = os.getenv("LOADS_DATABASE_URL")
+    if not loads_database_url:
+        raise HTTPException(status_code=500, detail="LOADS_DATABASE_URL is not configured")
+
+    engine = create_engine(_normalize_database_url(loads_database_url))
+    with engine.begin() as connection:
+        connection.execute(text(LOADS_SEED_SQL))
+        count = connection.execute(text("SELECT COUNT(*) FROM loads")).scalar_one()
+
+    return {"status": "ok", "loads_count": count}
+
+
 @app.get("/events")
 async def events(request: Request, _: None = Depends(verify_api_key)):
     queue: asyncio.Queue[str] = asyncio.Queue()
@@ -198,6 +252,14 @@ def _safe_float(val):
         return float(val) if val else None
     except (ValueError, TypeError):
         return None
+
+
+def _normalize_database_url(url: str) -> str:
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql+psycopg2://", 1)
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+psycopg2://", 1)
+    return url
 
 
 def _serialize(record: CallRecord) -> dict:
