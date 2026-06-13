@@ -390,8 +390,23 @@
       requested_human: 'Requested Human',
       other: 'Other'
     };
-    var SENTIMENT_COLORS = { positive: '#2dd4a7', neutral: '#e0a338', negative: '#f0506e', mixed: '#b18af0', unknown: '#64748b' };
-    var SENTIMENT_EMOJI = { positive: '+', neutral: '=', negative: '-', mixed: '~', unknown: '•' };
+    var SENTIMENT_COLORS = {
+      very_positive: '#14f1bd',
+      positive: '#2dd4a7',
+      neutral: '#e0a338',
+      negative: '#f0506e',
+      very_negative: '#fb7185',
+      unknown: '#64748b'
+    };
+    var SENTIMENT_LABELS = {
+      very_positive: 'Very Positive',
+      positive: 'Positive',
+      neutral: 'Neutral',
+      negative: 'Negative',
+      very_negative: 'Very Negative',
+      unknown: 'Unknown'
+    };
+    var SENTIMENT_EMOJI = { very_positive: '++', positive: '+', neutral: '=', negative: '-', very_negative: '--', unknown: '•' };
 
     var ICONS = {
       phone: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>',
@@ -517,7 +532,7 @@
     }
 
     function orderedSentimentKeys(sentiments) {
-      var preferred = ['positive', 'neutral', 'negative', 'mixed', 'unknown'];
+      var preferred = ['very_positive', 'positive', 'neutral', 'negative', 'very_negative', 'unknown'];
       var seen = {};
       var keys = [];
       preferred.forEach(function (k) {
@@ -530,6 +545,11 @@
         if (!seen[k] && (sentiments[k] || 0) > 0) keys.push(k);
       });
       return keys;
+    }
+
+    function prettySentiment(s) {
+      s = s || 'unknown';
+      return SENTIMENT_LABELS[s] || s.split('_').map(function (w) { return w.charAt(0).toUpperCase() + w.slice(1); }).join(' ');
     }
 
     /* ===================== Theme ===================== */
@@ -782,7 +802,7 @@
       charts.sentiment = new Chart($('sentimentChart'), {
         type: 'doughnut',
         data: {
-          labels: keys.map(function (k) { return k.charAt(0).toUpperCase() + k.slice(1); }),
+          labels: keys.map(prettySentiment),
           datasets: [{
             data: keys.map(function (k) { return s[k] || 0; }),
             backgroundColor: keys.map(function (k) { return SENTIMENT_COLORS[k] || SENTIMENT_COLORS.unknown; }),
@@ -830,7 +850,7 @@
         var pill = el('div', { cls: 'pill' });
         var sw = el('span', { cls: 'swatch' }); sw.style.background = SENTIMENT_COLORS[k] || SENTIMENT_COLORS.unknown;
         pill.appendChild(sw);
-        pill.appendChild(el('span', { text: (SENTIMENT_EMOJI[k] || SENTIMENT_EMOJI.unknown) + ' ' + k.charAt(0).toUpperCase() + k.slice(1) }));
+        pill.appendChild(el('span', { text: (SENTIMENT_EMOJI[k] || SENTIMENT_EMOJI.unknown) + ' ' + prettySentiment(k) }));
         pill.appendChild(el('span', { cls: 'cnt', text: '(' + (s[k] || 0) + ')' }));
         legend.appendChild(pill);
       });
@@ -1021,7 +1041,7 @@
           tr.appendChild(outTd);
           // Sentiment
           var sent = c.carrier_sentiment || 'neutral';
-          var sentTd = el('td', { text: (SENTIMENT_EMOJI[sent] || 'ðŸ˜') + ' ' + sent });
+          var sentTd = el('td', { text: (SENTIMENT_EMOJI[sent] || SENTIMENT_EMOJI.unknown) + ' ' + prettySentiment(sent) });
           if (c.carrier_sentiment_notes) sentTd.title = c.carrier_sentiment_notes;
           tr.appendChild(sentTd);
 
