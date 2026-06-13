@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import json
 import os
 import secrets
@@ -128,7 +128,7 @@ def startup():
 def dashboard(request: Request):
     if not is_dashboard_authenticated(request):
         return RedirectResponse("/login", status_code=303)
-    response = FileResponse(TEMPLATES_DIR / "dashboard_call_inspector_final_payload.html")
+    response = FileResponse(TEMPLATES_DIR / "dashboard.html")
     response.headers["Cache-Control"] = "no-store, max-age=0"
     set_dashboard_cookies(response, request)
     return response
