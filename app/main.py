@@ -247,24 +247,6 @@ def search_loads(
     return {"count": len(rows), "loads": rows}
 
 
-@app.get("/api/loads/{load_id}")
-def get_load(load_id: str, _: None = Depends(verify_api_key)):
-    rows = _query_loads_database(
-        """
-        SELECT
-            load_id, origin, destination, pickup_datetime, delivery_datetime,
-            equipment_type, loadboard_rate, notes, weight, commodity_type,
-            num_of_pieces, miles, dimensions
-        FROM loads
-        WHERE load_id = :load_id
-        """,
-        {"load_id": load_id},
-    )
-    if not rows:
-        raise HTTPException(status_code=404, detail="Load not found")
-    return rows[0]
-
-
 @app.get("/events")
 async def events(request: Request, _: None = Depends(verify_api_key)):
     queue: asyncio.Queue[str] = asyncio.Queue()
