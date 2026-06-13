@@ -91,7 +91,7 @@ def startup():
 
 @app.get("/")
 def dashboard():
-    response = FileResponse(TEMPLATES_DIR / "dashboard.html")
+    response = FileResponse(TEMPLATES_DIR / "dashboard_call_inspector.html")
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
 
