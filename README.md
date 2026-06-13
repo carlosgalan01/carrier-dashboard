@@ -28,16 +28,20 @@ Configure these environment variables in Render, Azure Container Apps, or any ot
 
 ```text
 API_KEY=your-secret-api-key
+DASHBOARD_USERNAME=admin
+DASHBOARD_PASSWORD=your-dashboard-password
 DATABASE_URL=sqlite:///./data/calls.db
 LOADS_DATABASE_URL=postgresql://user:password@host:5432/dbname
 PORT=8000
 ```
 
-`API_KEY` is required. HappyRobot and the dashboard use it as:
+`API_KEY` is required. HappyRobot and scripts use it as:
 
 ```text
 x-api-key: your-secret-api-key
 ```
+
+`DASHBOARD_USERNAME` and `DASHBOARD_PASSWORD` protect the dashboard route with browser Basic Auth. If `DASHBOARD_PASSWORD` is not set, it defaults to `API_KEY`.
 
 `DATABASE_URL` stores dashboard/call records. For the PoC this can be SQLite. In production it can point to Postgres.
 
@@ -244,9 +248,9 @@ Expected response:
 
 - All deployed traffic should use HTTPS. Render provides HTTPS by default.
 - API endpoints require `x-api-key`.
+- The dashboard route requires browser Basic Auth and then uses a same-origin HttpOnly cookie for dashboard API reads.
 - Secrets are injected through environment variables, not committed to Git.
 - The customer loads database should be accessed with a read-only user.
-- The dashboard route is public, but data APIs require the API key.
 
 ## Portability
 

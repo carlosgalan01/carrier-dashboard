@@ -1,6 +1,8 @@
 import asyncio
+import base64
 import json
 import os
+import secrets
 from datetime import datetime
 from pathlib import Path
 
@@ -31,6 +33,8 @@ app.add_middleware(
 )
 
 API_KEY = os.getenv("API_KEY", "dev-key-change-me")
+DASHBOARD_USERNAME = os.getenv("DASHBOARD_USERNAME", "admin")
+DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD", API_KEY)
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 event_subscribers: set[asyncio.Queue[str]] = set()
 LOADS_SEED_SQL = """
@@ -75,9 +79,35 @@ ON CONFLICT (load_id) DO NOTHING;
 
 
 def verify_api_key(request: Request):
-    key = request.headers.get("x-api-key") or request.query_params.get("api_key")
+    key = (
+        request.headers.get("x-api-key")
+        or request.query_params.get("api_key")
+        or request.cookies.get("dashboard_api_key")
+    )
     if key != API_KEY:
         raise HTTPException(status_code=401, detail="Invalid API key")
+
+
+def require_dashboard_auth(request: Request) -> None:
+    auth = request.headers.get("authorization", "")
+    scheme, _, token = auth.partition(" ")
+    if scheme.lower() == "basic" and token:
+        try:
+            decoded = base64.b64decode(token).decode("utf-8")
+            username, _, password = decoded.partition(":")
+            if (
+                secrets.compare_digest(username, DASHBOARD_USERNAME)
+                and secrets.compare_digest(password, DASHBOARD_PASSWORD)
+            ):
+                return
+        except (ValueError, UnicodeDecodeError):
+            pass
+
+    raise HTTPException(
+        status_code=401,
+        detail="Dashboard authentication required",
+        headers={"WWW-Authenticate": 'Basic realm="Carrier Dashboard"'},
+    )
 
 
 def broadcast_event(message: str) -> None:
@@ -91,9 +121,17 @@ def startup():
 
 
 @app.get("/")
-def dashboard():
+def dashboard(request: Request):
+    require_dashboard_auth(request)
     response = FileResponse(TEMPLATES_DIR / "dashboard_call_inspector_final_payload.html")
     response.headers["Cache-Control"] = "no-store, max-age=0"
+    response.set_cookie(
+        "dashboard_api_key",
+        API_KEY,
+        httponly=True,
+        secure=request.url.scheme == "https",
+        samesite="lax",
+    )
     return response
 
 

@@ -444,7 +444,6 @@
       </div>
     </div>
     <div class="controls">
-      <input id="apiKey" type="password" placeholder="API key" autocomplete="off" />
       <button class="btn" id="refreshBtn">Refresh</button>
       <span class="status" id="status"><span class="dot"></span><span id="statusText">Idle</span></span>
       <button class="icon-btn" id="themeBtn" title="Toggle theme" aria-label="Toggle theme"></button>
@@ -609,7 +608,7 @@
 
     /* ===================== Helpers ===================== */
     function $(id) { return document.getElementById(id); }
-    function headers() { return { 'x-api-key': $('apiKey').value }; }
+    function headers() { return {}; }
 
     function el(tag, opts) {
       var e = document.createElement(tag);
@@ -1738,7 +1737,6 @@
     }
 
     function fetchData() {
-      if (!$('apiKey').value) { setStatus('error', 'Enter API key'); return Promise.resolve(); }
       setStatus('', 'Loading...');
       return Promise.all([
         fetch('/api/stats', { headers: headers() }).then(function (r) { if (!r.ok) throw new Error('stats'); return r.json(); }),
@@ -1767,9 +1765,8 @@
     /* ===================== SSE ===================== */
     function connectSSE() {
       if (sse) { sse.close(); sse = null; }
-      if (!$('apiKey').value) return;
       try {
-        sse = new EventSource('/events?api_key=' + encodeURIComponent($('apiKey').value));
+        sse = new EventSource('/events');
         sse.addEventListener('open', function () {
           setStatus('connected', 'Live');
         });
@@ -1791,15 +1788,7 @@
       applyTheme(savedTheme);
       $('themeBtn').addEventListener('click', toggleTheme);
 
-      // api key persistence
-      var savedKey = localStorage.getItem('apiKey');
-      if (savedKey) $('apiKey').value = savedKey;
-      $('apiKey').addEventListener('change', function () {
-        localStorage.setItem('apiKey', $('apiKey').value);
-      });
-
       $('refreshBtn').addEventListener('click', function () {
-        localStorage.setItem('apiKey', $('apiKey').value);
         fetchData();
         connectSSE();
       });
@@ -1813,16 +1802,12 @@
       });
 
       // initial load
-      if ($('apiKey').value) {
-        fetchData();
-        connectSSE();
-      } else {
-        setStatus('', 'Enter API key to begin');
-      }
+      fetchData();
+      connectSSE();
 
       // auto-refresh every 30s
       refreshTimer = setInterval(function () {
-        if ($('apiKey').value) fetchData();
+        fetchData();
       }, 30000);
 
       // re-render charts on resize (debounced) to keep crisp
