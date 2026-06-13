@@ -91,7 +91,9 @@ def startup():
 
 @app.get("/")
 def dashboard():
-    return FileResponse(TEMPLATES_DIR / "dashboard.html")
+    response = FileResponse(TEMPLATES_DIR / "dashboard.html")
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
 
 
 @app.post("/webhook/call-completed")
