@@ -221,6 +221,10 @@ def search_loads(
     limit: int = 5,
     _: None = Depends(verify_api_key),
 ):
+    origin = _blank_to_none(origin)
+    destination = _blank_to_none(destination)
+    equipment_type = _blank_to_none(equipment_type)
+
     query = """
         SELECT
             load_id, origin, destination, pickup_datetime, delivery_datetime,
@@ -286,6 +290,13 @@ def _safe_float(val):
         return float(val) if val else None
     except (ValueError, TypeError):
         return None
+
+
+def _blank_to_none(value: str | None) -> str | None:
+    if value is None:
+        return None
+    value = value.strip()
+    return value or None
 
 
 def _normalize_database_url(url: str) -> str:
