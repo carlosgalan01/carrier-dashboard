@@ -36,6 +36,10 @@
       --c-negotiation_failed: #c2607a;
       --c-carrier_hung_up: #f0506e;
       --c-requested_human: #b18af0;
+      --c-no_loads_available: #64748b;
+      --c-carrier_not_verified: #94a3b8;
+      --c-no_agreement: #e0a338;
+      --c-transferred_to_sales: #b18af0;
       --c-other: #4b5563;
     }
     html[data-theme="light"] {
@@ -191,19 +195,19 @@
     .pill .cnt { color: var(--faint); font-family: 'JetBrains Mono', monospace; }
 
     /* Abandonment panel */
-    .aband { padding: 18px 20px; position: relative; overflow: hidden; }
+    .aband { padding: 24px 26px; position: relative; overflow: hidden; }
     .aband::after {
       content: ''; position: absolute; inset: 0; pointer-events: none;
       background: radial-gradient(120% 100% at 100% 0%, rgba(240,80,110,0.07) 0%, transparent 60%);
     }
-    .aband-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; position: relative; }
-    .aband-metric { padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); }
+    .aband-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 18px 0 22px; position: relative; }
+    .aband-metric { padding: 20px 18px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); min-height: 112px; }
     .aband-metric .am-top { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; }
-    .aband-metric .am-val { font-family: 'JetBrains Mono', monospace; font-size: 26px; font-weight: 600; margin: 8px 0 2px; }
+    .aband-metric .am-val { font-family: 'JetBrains Mono', monospace; font-size: 28px; font-weight: 600; margin: 14px 0 6px; }
     .aband-metric .am-pct { font-size: 11px; color: var(--faint); font-family: 'JetBrains Mono', monospace; }
-    .progress { height: 5px; border-radius: 999px; background: var(--line); overflow: hidden; margin-top: 12px; }
+    .progress { height: 5px; border-radius: 999px; background: var(--line); overflow: hidden; margin-top: 16px; }
     .progress > span { display: block; height: 100%; border-radius: 999px; background: var(--danger); transition: width 0.6s ease; }
-    .aband-foot { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; text-align: center; border-top: 1px solid var(--line); margin-top: 4px; padding-top: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; position: relative; }
+    .aband-foot { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; text-align: center; border-top: 1px solid var(--line); margin-top: 18px; padding-top: 18px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; position: relative; }
     .aband-foot b { color: var(--danger); font-weight: 700; }
 
     /* ---------- Table ---------- */
@@ -362,9 +366,30 @@
     var OUTCOME_COLORS = {
       load_accepted: '#2dd4a7', load_rejected: '#e0a338', no_match_found: '#3b82f6',
       carrier_not_eligible: '#6b7280', negotiation_failed: '#c2607a',
-      carrier_hung_up: '#f0506e', requested_human: '#b18af0', other: '#4b5563'
+      carrier_hung_up: '#f0506e', requested_human: '#b18af0',
+      no_loads_available: '#64748b', carrier_not_verified: '#94a3b8',
+      no_agreement: '#e0a338', transferred_to_sales: '#b18af0',
+      other: '#4b5563'
     };
-    var OUTCOME_ORDER = ['load_accepted','load_rejected','no_match_found','carrier_not_eligible','negotiation_failed','carrier_hung_up','requested_human','other'];
+    var OUTCOME_ORDER = [
+      'load_accepted','transferred_to_sales','no_agreement','no_loads_available',
+      'carrier_not_verified','load_rejected','no_match_found','carrier_not_eligible',
+      'negotiation_failed','carrier_hung_up','requested_human','other'
+    ];
+    var OUTCOME_LABELS = {
+      load_accepted: 'Load Accepted',
+      transferred_to_sales: 'Transferred To Sales',
+      no_agreement: 'No Agreement',
+      no_loads_available: 'No Loads Available',
+      carrier_not_verified: 'Carrier Not Verified',
+      load_rejected: 'Load Rejected',
+      no_match_found: 'No Match Found',
+      carrier_not_eligible: 'Carrier Not Eligible',
+      negotiation_failed: 'Negotiation Failed',
+      carrier_hung_up: 'Hung Up',
+      requested_human: 'Requested Human',
+      other: 'Other'
+    };
     var SENTIMENT_COLORS = { positive: '#2dd4a7', neutral: '#e0a338', negative: '#f0506e' };
     var SENTIMENT_EMOJI = { positive: '😊', neutral: '😐', negative: '😠' };
 
@@ -450,7 +475,23 @@
     }
 
     function prettyOutcome(o) {
-      return (o || 'other').split('_').map(function (w) { return w.charAt(0).toUpperCase() + w.slice(1); }).join(' ');
+      o = o || 'other';
+      return OUTCOME_LABELS[o] || o.split('_').map(function (w) { return w.charAt(0).toUpperCase() + w.slice(1); }).join(' ');
+    }
+
+    function orderedOutcomeKeys(outcomes) {
+      var seen = {};
+      var keys = [];
+      OUTCOME_ORDER.forEach(function (k) {
+        if ((outcomes[k] || 0) > 0) {
+          seen[k] = true;
+          keys.push(k);
+        }
+      });
+      Object.keys(outcomes || {}).sort().forEach(function (k) {
+        if (!seen[k] && (outcomes[k] || 0) > 0) keys.push(k);
+      });
+      return keys;
     }
 
     /* ===================== Theme ===================== */
@@ -557,12 +598,13 @@
     function renderOutcomesChart() {
       var cc = chartColors();
       var oc = state.stats.outcomes || {};
-      var total = OUTCOME_ORDER.reduce(function (a, k) { return a + (oc[k] || 0); }, 0) || 1;
-      var datasets = OUTCOME_ORDER.filter(function (k) { return (oc[k] || 0) > 0; }).map(function (k) {
+      var outcomeKeys = orderedOutcomeKeys(oc);
+      var total = outcomeKeys.reduce(function (a, k) { return a + (oc[k] || 0); }, 0) || 1;
+      var datasets = outcomeKeys.map(function (k) {
         return {
           label: prettyOutcome(k),
           data: [oc[k] || 0],
-          backgroundColor: OUTCOME_COLORS[k],
+          backgroundColor: OUTCOME_COLORS[k] || OUTCOME_COLORS.other,
           borderWidth: 0,
           _key: k,
           _pct: ((oc[k] || 0) / total * 100)
@@ -600,11 +642,11 @@
       // Legend (clickable filters)
       var legend = $('outcomesLegend');
       legend.innerHTML = '';
-      OUTCOME_ORDER.forEach(function (k) {
+      outcomeKeys.forEach(function (k) {
         var count = oc[k] || 0;
         if (count === 0) return;
         var pill = el('div', { cls: 'pill' + (state.filter !== 'all' && state.filter !== k ? ' inactive' : '') });
-        var sw = el('span', { cls: 'swatch' }); sw.style.background = OUTCOME_COLORS[k];
+        var sw = el('span', { cls: 'swatch' }); sw.style.background = OUTCOME_COLORS[k] || OUTCOME_COLORS.other;
         pill.appendChild(sw);
         pill.appendChild(el('span', { text: prettyOutcome(k) }));
         pill.appendChild(el('span', { cls: 'cnt', text: '(' + count + ')' }));
@@ -844,12 +886,12 @@
       wrap.innerHTML = '';
       var oc = state.stats ? (state.stats.outcomes || {}) : {};
       var opts = [{ key: 'all', label: 'All' }].concat(
-        OUTCOME_ORDER.filter(function (k) { return (oc[k] || 0) > 0; }).map(function (k) { return { key: k, label: prettyOutcome(k) }; })
+        orderedOutcomeKeys(oc).map(function (k) { return { key: k, label: prettyOutcome(k) }; })
       );
       opts.forEach(function (o) {
         var pill = el('div', { cls: 'pill' + (state.filter === o.key ? '' : ' inactive') });
         if (o.key !== 'all') {
-          var sw = el('span', { cls: 'swatch' }); sw.style.background = OUTCOME_COLORS[o.key];
+          var sw = el('span', { cls: 'swatch' }); sw.style.background = OUTCOME_COLORS[o.key] || OUTCOME_COLORS.other;
           pill.appendChild(sw);
         }
         pill.appendChild(el('span', { text: o.label }));
