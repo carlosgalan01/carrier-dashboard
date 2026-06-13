@@ -107,6 +107,7 @@
     const refreshBtn = document.querySelector("#refresh");
     let outcomesChart;
     let sentimentChart;
+    let eventSource;
 
     apiKeyInput.value = localStorage.getItem("carrierDashboardApiKey") || "";
 
@@ -199,9 +200,36 @@
       statusEl.textContent = `Updated ${new Date().toLocaleTimeString()}`;
     }
 
-    refreshBtn.addEventListener("click", () => refresh().catch((error) => statusEl.textContent = error.message));
-    setInterval(() => refresh().catch((error) => statusEl.textContent = error.message), 10000);
-    refresh().catch((error) => statusEl.textContent = error.message);
+    function connectEvents() {
+      if (!apiKeyInput.value.trim()) return;
+      if (eventSource) eventSource.close();
+
+      const apiKey = encodeURIComponent(apiKeyInput.value.trim());
+      eventSource = new EventSource(`/events?api_key=${apiKey}`);
+
+      eventSource.addEventListener("connected", () => {
+        statusEl.textContent = "Live updates connected.";
+      });
+
+      eventSource.addEventListener("dashboard_update", () => {
+        refresh().catch((error) => statusEl.textContent = error.message);
+      });
+
+      eventSource.onerror = () => {
+        statusEl.textContent = "Live updates reconnecting...";
+      };
+    }
+
+    refreshBtn.addEventListener("click", () => {
+      refresh().then(connectEvents).catch((error) => statusEl.textContent = error.message);
+    });
+
+    apiKeyInput.addEventListener("change", () => {
+      refresh().then(connectEvents).catch((error) => statusEl.textContent = error.message);
+    });
+
+    setInterval(() => refresh().catch((error) => statusEl.textContent = error.message), 30000);
+    refresh().then(connectEvents).catch((error) => statusEl.textContent = error.message);
   </script>
 </body>
 </html>

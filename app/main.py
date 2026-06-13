@@ -1,21 +1,24 @@
-﻿import os
+import asyncio
 import json
-from fastapi import FastAPI, Request, HTTPException, Depends
-from fastapi.responses import FileResponse
-from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
-from dotenv import load_dotenv
+import os
 from pathlib import Path
 
-from app.database import init_db, get_db
+from dotenv import load_dotenv
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, StreamingResponse
+from sqlalchemy.orm import Session
+
+from app.database import get_db, init_db
 from app.models import CallRecord
+
 
 load_dotenv()
 
 app = FastAPI(
     title="Carrier Sales Dashboard API",
     description="API for receiving and serving carrier call data from HappyRobot",
-    version="1.0.0"
+    version="1.0.0",
 )
 
 app.add_middleware(
@@ -27,21 +30,29 @@ app.add_middleware(
 
 API_KEY = os.getenv("API_KEY", "dev-key-change-me")
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
+event_subscribers: set[asyncio.Queue[str]] = set()
+
 
 def verify_api_key(request: Request):
     key = request.headers.get("x-api-key") or request.query_params.get("api_key")
     if key != API_KEY:
         raise HTTPException(status_code=401, detail="Invalid API key")
 
+
+def broadcast_event(message: str) -> None:
+    for subscriber in list(event_subscribers):
+        subscriber.put_nowait(message)
+
+
 @app.on_event("startup")
 def startup():
     init_db()
+
 
 @app.get("/")
 def dashboard():
     return FileResponse(TEMPLATES_DIR / "index.html")
 
-# Webhook endpoint: receives data from HappyRobot.
 
 @app.post("/webhook/call-completed")
 async def receive_call_data(request: Request, db: Session = Depends(get_db)):
@@ -57,7 +68,6 @@ async def receive_call_data(request: Request, db: Session = Depends(get_db)):
     outcome = body.get("call_outcome", {})
     sentiment = body.get("carrier_sentiment", {})
 
-    # Parse negotiation_rounds safely
     neg_rounds = offer.get("negotiation_rounds")
     try:
         neg_rounds = int(neg_rounds) if neg_rounds else None
@@ -94,16 +104,16 @@ async def receive_call_data(request: Request, db: Session = Depends(get_db)):
 
     db.add(record)
     db.commit()
+    broadcast_event("call_created")
     return {"status": "ok", "run_id": body.get("run_id")}
 
-# API endpoints: serve data to the dashboard.
 
 @app.get("/api/calls")
 def get_calls(
     limit: int = 100,
     offset: int = 0,
     db: Session = Depends(get_db),
-    _: None = Depends(verify_api_key)
+    _: None = Depends(verify_api_key),
 ):
     """Get all call records, newest first."""
     calls = (
@@ -113,10 +123,8 @@ def get_calls(
         .limit(limit)
         .all()
     )
-    return {
-        "count": db.query(CallRecord).count(),
-        "calls": [_serialize(c) for c in calls]
-    }
+    return {"count": db.query(CallRecord).count(), "calls": [_serialize(c) for c in calls]}
+
 
 @app.get("/api/stats")
 def get_stats(db: Session = Depends(get_db), _: None = Depends(verify_api_key)):
@@ -150,11 +158,33 @@ def get_stats(db: Session = Depends(get_db), _: None = Depends(verify_api_key)):
         "sentiments": {s: c for s, c in sentiments if s},
     }
 
+
+@app.get("/events")
+async def events(request: Request, _: None = Depends(verify_api_key)):
+    queue: asyncio.Queue[str] = asyncio.Queue()
+    event_subscribers.add(queue)
+
+    async def stream():
+        try:
+            yield "event: connected\ndata: ok\n\n"
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    message = await asyncio.wait_for(queue.get(), timeout=25)
+                    yield f"event: dashboard_update\ndata: {message}\n\n"
+                except asyncio.TimeoutError:
+                    yield "event: ping\ndata: keepalive\n\n"
+        finally:
+            event_subscribers.discard(queue)
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
+
+
 @app.get("/health")
 def health():
     return {"status": "healthy"}
 
-# Helpers.
 
 def _safe_int(val):
     try:
@@ -162,11 +192,13 @@ def _safe_int(val):
     except (ValueError, TypeError):
         return None
 
+
 def _safe_float(val):
     try:
         return float(val) if val else None
     except (ValueError, TypeError):
         return None
+
 
 def _serialize(record: CallRecord) -> dict:
     return {
@@ -197,5 +229,3 @@ def _serialize(record: CallRecord) -> dict:
         "carrier_sentiment": record.carrier_sentiment,
         "sentiment_notes": record.sentiment_notes,
     }
-
-
