@@ -945,41 +945,43 @@
       var offer = row.offer_data || {};
       var outcome = row.call_outcome || {};
       var sentiment = row.carrier_sentiment || {};
+      var outcomeValue = typeof outcome === 'object' ? outcome.outcome : outcome;
+      var sentimentValue = typeof sentiment === 'object' ? sentiment.sentiment : sentiment;
 
       return {
         run_id: row.run_id,
         timestamp: row.timestamp,
 
         // Exact source: call_metadata
-        duration: meta.duration,
-        status: meta.status,
-        call_end_event: meta.call_end_event,
-        call_end_initiator: meta.call_end_initiator,
-        num_tool_calls: meta.num_tool_calls,
-        num_user_turns: meta.num_user_turns,
-        num_total_turns: meta.num_total_turns,
-        p70_latency_ms: meta.p70_latency_ms,
-        p90_latency_ms: meta.p90_latency_ms,
-        transcript: meta.transcript,
+        duration: meta.duration != null ? meta.duration : row.duration,
+        status: meta.status != null ? meta.status : row.status,
+        call_end_event: meta.call_end_event != null ? meta.call_end_event : row.call_end_event,
+        call_end_initiator: meta.call_end_initiator != null ? meta.call_end_initiator : row.call_end_initiator,
+        num_tool_calls: meta.num_tool_calls != null ? meta.num_tool_calls : row.num_tool_calls,
+        num_user_turns: meta.num_user_turns != null ? meta.num_user_turns : row.num_user_turns,
+        num_total_turns: meta.num_total_turns != null ? meta.num_total_turns : row.num_total_turns,
+        p70_latency_ms: meta.p70_latency_ms != null ? meta.p70_latency_ms : row.p70_latency_ms,
+        p90_latency_ms: meta.p90_latency_ms != null ? meta.p90_latency_ms : row.p90_latency_ms,
+        transcript: meta.transcript != null ? meta.transcript : row.transcript,
 
         // Exact source: offer_data
-        mc_number: offer.mc_number,
-        carrier_name: offer.carrier_name,
-        load_id: offer.load_id,
-        origin: offer.origin,
-        destination: offer.destination,
-        loadboard_rate: offer.loadboard_rate,
-        initial_rate_offered: offer.initial_rate_offered,
-        carrier_counter_offer: offer.carrier_counter_offer,
-        final_agreed_rate: offer.final_agreed_rate,
-        equipment_type: offer.equipment_type,
-        negotiation_rounds: offer.negotiation_rounds,
+        mc_number: offer.mc_number != null ? offer.mc_number : row.mc_number,
+        carrier_name: offer.carrier_name != null ? offer.carrier_name : row.carrier_name,
+        load_id: offer.load_id != null ? offer.load_id : row.load_id,
+        origin: offer.origin != null ? offer.origin : row.origin,
+        destination: offer.destination != null ? offer.destination : row.destination,
+        loadboard_rate: offer.loadboard_rate != null ? offer.loadboard_rate : row.loadboard_rate,
+        initial_rate_offered: offer.initial_rate_offered != null ? offer.initial_rate_offered : row.initial_rate_offered,
+        carrier_counter_offer: offer.carrier_counter_offer != null ? offer.carrier_counter_offer : row.carrier_counter_offer,
+        final_agreed_rate: offer.final_agreed_rate != null ? offer.final_agreed_rate : row.final_agreed_rate,
+        equipment_type: offer.equipment_type != null ? offer.equipment_type : row.equipment_type,
+        negotiation_rounds: offer.negotiation_rounds != null ? offer.negotiation_rounds : row.negotiation_rounds,
 
         // Exact source: classifier outputs
-        call_outcome: outcome.outcome,
-        call_outcome_notes: outcome.notes,
-        carrier_sentiment: sentiment.sentiment,
-        carrier_sentiment_notes: sentiment.notes,
+        call_outcome: outcomeValue,
+        call_outcome_notes: (typeof outcome === 'object' ? outcome.notes : null) || row.call_outcome_notes || row.outcome_notes,
+        carrier_sentiment: sentimentValue,
+        carrier_sentiment_notes: (typeof sentiment === 'object' ? sentiment.notes : null) || row.carrier_sentiment_notes || row.sentiment_notes,
 
         raw_payload: row
       };

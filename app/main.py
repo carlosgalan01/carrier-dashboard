@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -118,6 +119,7 @@ async def receive_call_data(request: Request, db: Session = Depends(get_db)):
 
     record = CallRecord(
         run_id=body.get("run_id", ""),
+        timestamp=_parse_timestamp(body.get("timestamp")) or datetime.utcnow(),
         duration=_safe_int(call_meta.get("duration")),
         status=call_meta.get("status"),
         call_end_event=call_meta.get("call_end_event"),
@@ -295,6 +297,19 @@ def _safe_float(val):
         return None
 
 
+def _parse_timestamp(val):
+    if not val:
+        return None
+    if isinstance(val, datetime):
+        return val
+    if isinstance(val, str):
+        try:
+            return datetime.fromisoformat(val.replace("Z", "+00:00")).replace(tzinfo=None)
+        except ValueError:
+            return None
+    return None
+
+
 def _blank_to_none(value: str | None) -> str | None:
     if value is None:
         return None
@@ -356,6 +371,7 @@ def _serialize(record: CallRecord) -> dict:
         "num_total_turns": record.num_total_turns,
         "p70_latency_ms": record.p70_latency_ms,
         "p90_latency_ms": record.p90_latency_ms,
+        "transcript": record.transcript,
         "mc_number": record.mc_number,
         "carrier_name": record.carrier_name,
         "load_id": record.load_id,
