@@ -158,9 +158,24 @@
     .kpi {
       position: relative; padding: 16px 18px;
       background: var(--panel);
-      transition: background-color 0.15s ease;
+      transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
     }
     .kpi:hover { background: var(--panel-2); }
+    .kpi.score-good {
+      border-color: color-mix(in srgb, var(--success) 48%, var(--line));
+      box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--success) 34%, transparent);
+      --score-color: var(--success);
+    }
+    .kpi.score-warn {
+      border-color: color-mix(in srgb, var(--warning) 48%, var(--line));
+      box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--warning) 34%, transparent);
+      --score-color: var(--warning);
+    }
+    .kpi.score-bad {
+      border-color: color-mix(in srgb, var(--danger) 52%, var(--line));
+      box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--danger) 38%, transparent);
+      --score-color: var(--danger);
+    }
     .kpi .k-icon { position: absolute; top: 14px; right: 14px; color: var(--faint); }
     .kpi .k-label { font-size: 11px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
     .kpi .k-value { font-family: 'JetBrains Mono', monospace; font-size: 28px; font-weight: 600; line-height: 1.1; margin-top: 8px; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
@@ -168,15 +183,15 @@
     .k-score {
       position: absolute; left: 18px; right: 18px; bottom: 12px;
       height: 5px; border-radius: 999px;
-      background: linear-gradient(90deg, var(--danger) 0%, var(--warning) 45%, var(--faint) 52%, var(--success) 100%);
+      background: linear-gradient(90deg, var(--danger) 0%, var(--danger) 26%, var(--warning) 48%, var(--warning) 56%, var(--success) 78%, var(--success) 100%);
       opacity: 0.9;
     }
     .k-score::after {
       content: ''; position: absolute; top: 50%; left: var(--score, 50%);
       width: 10px; height: 10px; border-radius: 50%;
-      background: var(--text); border: 2px solid var(--panel);
+      background: var(--score-color, var(--text)); border: 2px solid var(--panel);
       transform: translate(-50%, -50%);
-      box-shadow: 0 0 0 1px var(--line-strong);
+      box-shadow: 0 0 0 1px color-mix(in srgb, var(--score-color, var(--text)) 70%, var(--line-strong));
     }
     .kpi.has-score { padding-bottom: 28px; }
 
@@ -676,6 +691,12 @@
       return null;
     }
 
+    function scoreTone(score) {
+      if (score >= 70) return 'score-good';
+      if (score >= 40) return 'score-warn';
+      return 'score-bad';
+    }
+
     function renderKpis() {
       var s = state.stats;
       var total = s.total_calls || 0;
@@ -704,7 +725,8 @@
       grid.innerHTML = '';
       cards.forEach(function (c) {
         var hasScore = c.score !== null && c.score !== undefined;
-        var card = el('div', { cls: 'kpi ' + (hasScore ? 'has-score ' : '') + 'panel hoverable' });
+        var cardTone = hasScore ? scoreTone(c.score) + ' ' : '';
+        var card = el('div', { cls: 'kpi ' + cardTone + (hasScore ? 'has-score ' : '') + 'panel hoverable' });
         var ic = el('div', { cls: 'k-icon', html: c.icon });
         var label = el('div', { cls: 'k-label', text: c.label });
         var val = el('div', { cls: 'k-value' });
@@ -1329,4 +1351,3 @@
   </script>
 </body>
 </html>
-
