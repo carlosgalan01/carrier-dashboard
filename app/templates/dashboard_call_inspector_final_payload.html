@@ -404,7 +404,17 @@
       color: var(--warning); border: 1px solid color-mix(in srgb, var(--warning) 42%, var(--line));
       background: color-mix(in srgb, var(--warning) 11%, transparent);
       border-radius: 6px; padding: 4px 7px; font-size: 10px; font-family: 'JetBrains Mono', monospace;
+      cursor: pointer; user-select: none; list-style: none;
     }
+    .tool-call::-webkit-details-marker { display: none; }
+    .tool-result {
+      margin-top: 8px; border: 1px solid color-mix(in srgb, var(--warning) 28%, var(--line));
+      border-radius: 8px; background: color-mix(in srgb, var(--panel) 78%, #000);
+      padding: 10px; max-height: 220px; overflow: auto;
+      color: var(--muted); font-family: 'JetBrains Mono', monospace; font-size: 11px;
+      line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+    }
+    .tool-detail[open] .tool-call { border-bottom-left-radius: 4px; border-bottom-right-radius: 4px; }
     .raw-json {
       white-space: pre-wrap; word-break: break-word;
       font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.55;
@@ -802,9 +812,50 @@
           content: cleanTranscriptContent(turn.content),
           start: turn.start,
           end: turn.end,
+          tool_call_id: turn.tool_call_id,
+          name: turn.name,
           tool_calls: Array.isArray(turn.tool_calls) ? turn.tool_calls : []
         };
       }).filter(function (turn) { return turn.content || turn.tool_calls.length; });
+    }
+
+    function formatToolResult(content) {
+      var parsed = parseMaybeJson(content);
+      if (parsed) return JSON.stringify(parsed, null, 2);
+      return content || 'No tool output captured.';
+    }
+
+    function groupToolResults(turns) {
+      var visible = [];
+      var lastToolOwner = null;
+      turns.forEach(function (turn) {
+        var role = String(turn.role || 'unknown').toLowerCase();
+        if (role === 'tool' && lastToolOwner && lastToolOwner.tool_calls && lastToolOwner.tool_calls.length) {
+          var matched = null;
+          if (turn.tool_call_id) {
+            matched = lastToolOwner.tool_calls.find(function (tc) { return tc && tc.id === turn.tool_call_id; });
+          }
+          if (!matched) {
+            matched = lastToolOwner.tool_calls.find(function (tc) { return tc && !tc._tool_result; }) || lastToolOwner.tool_calls[0];
+          }
+          matched._tool_result = turn.content;
+          return;
+        }
+
+        if (turn.tool_calls && turn.tool_calls.length) {
+          turn.tool_calls = turn.tool_calls.map(function (tc) {
+            var copy = {};
+            Object.keys(tc || {}).forEach(function (key) { copy[key] = tc[key]; });
+            copy._tool_result = null;
+            return copy;
+          });
+          lastToolOwner = turn;
+        } else if (role !== 'tool') {
+          lastToolOwner = null;
+        }
+        visible.push(turn);
+      });
+      return visible;
     }
 
     function addDetailCard(parent, label, value, opts) {
@@ -884,7 +935,7 @@
         transcriptSection.appendChild(el('div', { cls: 'empty', text: 'No transcript available for this call.' }));
       } else {
         var list = el('div', { cls: 'transcript-list' });
-        turns.forEach(function (turn) {
+        groupToolResults(turns).forEach(function (turn) {
           var role = String(turn.role || 'unknown').toLowerCase();
           var row = el('div', { cls: 'turn ' + (role === 'user' ? 'user' : 'assistant') });
           row.appendChild(el('div', { cls: 'turn-avatar', text: role === 'user' ? 'C' : 'AI' }));
@@ -898,7 +949,10 @@
           if (turn.tool_calls && turn.tool_calls.length) {
             turn.tool_calls.forEach(function (tc) {
               var name = tc && tc.function && tc.function.name ? tc.function.name : 'tool_call';
-              bubble.appendChild(el('div', { cls: 'tool-call', text: '-> ' + name }));
+              var detail = el('details', { cls: 'tool-detail' });
+              detail.appendChild(el('summary', { cls: 'tool-call', text: '-> ' + name }));
+              detail.appendChild(el('pre', { cls: 'tool-result', text: formatToolResult(tc._tool_result) }));
+              bubble.appendChild(detail);
             });
           }
           row.appendChild(bubble);
