@@ -1,15 +1,15 @@
 import asyncio
-import base64
 import json
 import os
 import secrets
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import parse_qs
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
@@ -35,6 +35,7 @@ app.add_middleware(
 API_KEY = os.getenv("API_KEY", "dev-key-change-me")
 DASHBOARD_USERNAME = os.getenv("DASHBOARD_USERNAME", "admin")
 DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD", API_KEY)
+DASHBOARD_SESSION_TOKEN = secrets.token_urlsafe(32)
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 event_subscribers: set[asyncio.Queue[str]] = set()
 LOADS_SEED_SQL = """
@@ -88,25 +89,26 @@ def verify_api_key(request: Request):
         raise HTTPException(status_code=401, detail="Invalid API key")
 
 
-def require_dashboard_auth(request: Request) -> None:
-    auth = request.headers.get("authorization", "")
-    scheme, _, token = auth.partition(" ")
-    if scheme.lower() == "basic" and token:
-        try:
-            decoded = base64.b64decode(token).decode("utf-8")
-            username, _, password = decoded.partition(":")
-            if (
-                secrets.compare_digest(username, DASHBOARD_USERNAME)
-                and secrets.compare_digest(password, DASHBOARD_PASSWORD)
-            ):
-                return
-        except (ValueError, UnicodeDecodeError):
-            pass
+def is_dashboard_authenticated(request: Request) -> bool:
+    token = request.cookies.get("dashboard_session")
+    return bool(token) and secrets.compare_digest(token, DASHBOARD_SESSION_TOKEN)
 
-    raise HTTPException(
-        status_code=401,
-        detail="Dashboard authentication required",
-        headers={"WWW-Authenticate": 'Basic realm="Carrier Dashboard"'},
+
+def set_dashboard_cookies(response: RedirectResponse | FileResponse, request: Request) -> None:
+    secure_cookie = request.url.scheme == "https"
+    response.set_cookie(
+        "dashboard_session",
+        DASHBOARD_SESSION_TOKEN,
+        httponly=True,
+        secure=secure_cookie,
+        samesite="lax",
+    )
+    response.set_cookie(
+        "dashboard_api_key",
+        API_KEY,
+        httponly=True,
+        secure=secure_cookie,
+        samesite="lax",
     )
 
 
@@ -122,16 +124,47 @@ def startup():
 
 @app.get("/")
 def dashboard(request: Request):
-    require_dashboard_auth(request)
+    if not is_dashboard_authenticated(request):
+        return RedirectResponse("/login", status_code=303)
     response = FileResponse(TEMPLATES_DIR / "dashboard_call_inspector_final_payload.html")
     response.headers["Cache-Control"] = "no-store, max-age=0"
-    response.set_cookie(
-        "dashboard_api_key",
-        API_KEY,
-        httponly=True,
-        secure=request.url.scheme == "https",
-        samesite="lax",
-    )
+    set_dashboard_cookies(response, request)
+    return response
+
+
+@app.get("/login")
+def login_page(request: Request):
+    if is_dashboard_authenticated(request):
+        return RedirectResponse("/", status_code=303)
+    response = FileResponse(TEMPLATES_DIR / "dashboard_login.html")
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
+@app.post("/login")
+async def login(request: Request):
+    form = parse_qs((await request.body()).decode("utf-8"))
+    username = form.get("username", [""])[0]
+    password = form.get("password", [""])[0]
+
+    if (
+        secrets.compare_digest(username, DASHBOARD_USERNAME)
+        and secrets.compare_digest(password, DASHBOARD_PASSWORD)
+    ):
+        response = RedirectResponse("/", status_code=303)
+        set_dashboard_cookies(response, request)
+        return response
+
+    response = RedirectResponse("/login?error=1", status_code=303)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
+@app.get("/logout")
+def logout():
+    response = RedirectResponse("/login", status_code=303)
+    response.delete_cookie("dashboard_session")
+    response.delete_cookie("dashboard_api_key")
     return response
 
 

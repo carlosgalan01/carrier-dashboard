@@ -41,7 +41,7 @@ PORT=8000
 x-api-key: your-secret-api-key
 ```
 
-`DASHBOARD_USERNAME` and `DASHBOARD_PASSWORD` protect the dashboard route with browser Basic Auth. If `DASHBOARD_PASSWORD` is not set, it defaults to `API_KEY`.
+`DASHBOARD_USERNAME` and `DASHBOARD_PASSWORD` protect the dashboard login page. If `DASHBOARD_PASSWORD` is not set, it defaults to `API_KEY`.
 
 `DATABASE_URL` stores dashboard/call records. For the PoC this can be SQLite. In production it can point to Postgres.
 
@@ -248,7 +248,7 @@ Expected response:
 
 - All deployed traffic should use HTTPS. Render provides HTTPS by default.
 - API endpoints require `x-api-key`.
-- The dashboard route requires browser Basic Auth and then uses a same-origin HttpOnly cookie for dashboard API reads.
+- The dashboard route requires sign-in at `/login` and then uses same-origin HttpOnly cookies for dashboard API reads.
 - Secrets are injected through environment variables, not committed to Git.
 - The customer loads database should be accessed with a read-only user.
 
