@@ -222,10 +222,16 @@
     .pill .cnt { color: var(--faint); font-family: 'JetBrains Mono', monospace; }
 
     /* Abandonment panel */
-    .aband { padding: 24px 26px; position: relative; overflow: hidden; }
+    .aband {
+      padding: 24px 26px; position: relative; overflow: hidden;
+      --aband-color: var(--danger);
+    }
+    .aband.score-good { --aband-color: var(--success); border-color: color-mix(in srgb, var(--success) 42%, var(--line)); }
+    .aband.score-warn { --aband-color: var(--warning); border-color: color-mix(in srgb, var(--warning) 42%, var(--line)); }
+    .aband.score-bad { --aband-color: var(--danger); border-color: color-mix(in srgb, var(--danger) 48%, var(--line)); }
     .aband::after {
       content: ''; position: absolute; inset: 0; pointer-events: none;
-      background: radial-gradient(120% 100% at 100% 0%, rgba(240,80,110,0.07) 0%, transparent 60%);
+      background: radial-gradient(120% 100% at 100% 0%, color-mix(in srgb, var(--aband-color) 10%, transparent) 0%, transparent 60%);
     }
     .aband-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 18px 0 22px; position: relative; }
     .aband-metric { padding: 20px 18px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); min-height: 112px; }
@@ -233,11 +239,11 @@
     .aband-metric .am-val { font-family: 'JetBrains Mono', monospace; font-size: 28px; font-weight: 600; margin: 14px 0 6px; }
     .aband-metric .am-pct { font-size: 11px; color: var(--faint); font-family: 'JetBrains Mono', monospace; }
     .progress { height: 5px; border-radius: 999px; background: var(--line); overflow: hidden; margin-top: 16px; }
-    .progress > span { display: block; height: 100%; border-radius: 999px; background: var(--danger); transition: width 0.6s ease; }
+    .progress > span { display: block; height: 100%; border-radius: 999px; background: var(--aband-color); transition: width 0.6s ease; }
     .aband-foot { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; text-align: center; border-top: 1px solid var(--line); margin-top: 18px; padding-top: 18px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; position: relative; }
-    .aband-foot b { color: var(--danger); font-weight: 700; }
+    .aband-foot b { color: var(--aband-color); font-weight: 700; }
     .aband-rate-big { position: relative; display: grid; place-items: center; min-height: 92px; margin-top: 18px; }
-    .aband-rate-big .rate { font-family: 'JetBrains Mono', monospace; font-size: clamp(42px, 7vw, 76px); line-height: 0.95; font-weight: 700; color: var(--danger); letter-spacing: -0.06em; }
+    .aband-rate-big .rate { font-family: 'JetBrains Mono', monospace; font-size: clamp(42px, 7vw, 76px); line-height: 0.95; font-weight: 700; color: var(--aband-color); letter-spacing: -0.06em; }
     .aband-rate-big .label { margin-top: 10px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; text-align: center; }
 
     /* ---------- Table ---------- */
@@ -1024,6 +1030,12 @@
       var hungPct = total ? hungUp / total * 100 : 0;
       var humanPct = total ? reqHuman / total * 100 : 0;
       var combined = total ? (hungUp + reqHuman) / total * 100 : 0;
+      var tone = scoreTone(kpiScore('abandon', combined));
+      var panel = document.querySelector('.aband');
+      if (panel) {
+        panel.classList.remove('score-good', 'score-warn', 'score-bad');
+        panel.classList.add(tone);
+      }
 
       var wrap = $('abandMetrics');
       wrap.innerHTML = '';
