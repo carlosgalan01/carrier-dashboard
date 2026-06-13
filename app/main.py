@@ -91,7 +91,7 @@ def startup():
 
 @app.get("/")
 def dashboard():
-    return FileResponse(TEMPLATES_DIR / "index.html")
+    return FileResponse(TEMPLATES_DIR / "dashboard.html")
 
 
 @app.post("/webhook/call-completed")
