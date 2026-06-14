@@ -1,26 +1,36 @@
-# Carrier Sales Dashboard
+# SpaceY Agent Dashboard
 
 Dockerized FastAPI service for a HappyRobot inbound carrier sales workflow.
 
 The service exposes:
 
-- A live dashboard at `/`
+- A protected dashboard at `/`
+- A login page at `/login`
 - A webhook for completed HappyRobot calls
-- Read-only load lookup endpoints backed by a customer PostgreSQL database
+- Read-only load search backed by a customer PostgreSQL database
 - Metrics endpoints used by the dashboard
 - Server-Sent Events for live dashboard refreshes
+- Static dashboard assets under `/static`
 
 ## Architecture
 
 ```text
-HappyRobot workflow
-  -> FastAPI service
-      -> customer loads Postgres via LOADS_DATABASE_URL
-      -> dashboard/call metrics DB via DATABASE_URL
-  -> browser dashboard
+Carrier phone call
+  -> SpaceY Agent workflow in HappyRobot
+      -> public FMCSA API for carrier verification
+      -> FastAPI Docker container
+          -> /api/loads/search reads customer loads from LOADS_DATABASE_URL
+          -> /webhook/call-completed writes selected call fields to DATABASE_URL
+          -> /api/stats, /api/calls, /events power the browser dashboard
+          -> / and /static serve dashboard HTML/CSS/JS/assets
+      -> browser dashboard
 ```
 
-HappyRobot never connects directly to PostgreSQL. It calls this API over HTTPS with an API key. The API owns database access and exposes only the read-only load data required by the agent.
+HappyRobot runs the voice workflow, telephony, carrier conversation, carrier verification flow, load search calls, negotiation, and completed-call webhook. The FastAPI container handles load lookup tools, webhook ingestion, selected call storage, analytics APIs, dashboard HTML, and `/static` assets. There is no separate frontend service.
+
+HappyRobot never connects directly to PostgreSQL. It calls this API over HTTPS with an API key. The API owns database access and exposes only the load search and dashboard data required by the workflow.
+
+Carrier verification belongs to the HappyRobot workflow. If the workflow verifies carriers through the public FMCSA API, configure the FMCSA API key on the HappyRobot/workflow side. FMCSA verification is not implemented as a FastAPI route in this repository.
 
 ## Runtime Configuration
 
@@ -43,11 +53,56 @@ x-api-key: your-secret-api-key
 
 `DASHBOARD_USERNAME` and `DASHBOARD_PASSWORD` protect the dashboard login page. If `DASHBOARD_PASSWORD` is not set, it defaults to `API_KEY`.
 
-`DATABASE_URL` stores dashboard/call records. For the PoC this can be SQLite. In production it can point to Postgres.
+`DATABASE_URL` stores dashboard/call analytics records. For Docker/local PoC usage, `sqlite:///./data/calls.db` works with the mounted `./data` folder. For production or client handoff, prefer Postgres for durable analytics storage. If SQLite is kept in production, use a persistent disk so call records are not lost on redeploy or restart.
 
 `LOADS_DATABASE_URL` points to the customer's PostgreSQL database containing the `loads` table. The application treats this database as read-only for normal agent workflows.
 
 `PORT` is usually injected by the hosting provider. Render provides it automatically.
+
+Optional workflow-side variable:
+
+```text
+FMCSA_API_KEY=<configured in HappyRobot/workflow environment>
+```
+
+Use this only if the HappyRobot workflow performs carrier verification through the public FMCSA API. It is not read by the FastAPI service in this repository.
+
+## Data Storage
+
+### Loads
+
+Loads are stored separately in the customer PostgreSQL database configured by `LOADS_DATABASE_URL`.
+
+`GET /api/loads/search` reads from the `loads` table using origin, destination, equipment type, and limit filters. Normal customer deployments should use a read-only database user for `LOADS_DATABASE_URL`.
+
+### Completed Calls
+
+When a call ends, HappyRobot sends:
+
+```text
+POST /webhook/call-completed
+x-api-key: <API_KEY>
+content-type: application/json
+```
+
+FastAPI extracts selected fields from:
+
+- `call_metadata`
+- `offer_data`
+- `call_outcome`
+- `carrier_sentiment`
+
+Those selected fields are stored in the `call_records` table through SQLAlchemy. The database used for `call_records` is `DATABASE_URL`.
+
+The full raw webhook payload is not persisted as-is. The dashboard reads stored call data through `/api/calls` and aggregate metrics through `/api/stats`.
+
+Current persistence behavior:
+
+- `app/database.py` defaults to `sqlite:///./data/calls.db` if `DATABASE_URL` is not set.
+- `docker-compose.yml` sets `DATABASE_URL=sqlite:///./data/calls.db`.
+- Docker Compose mounts `./data:/app/data`, so local Docker call records persist in the local `data/` folder.
+- On Render or similar hosts, SQLite data is not durable unless a persistent disk is configured.
+- For production/client handoff, use Postgres for `DATABASE_URL`.
 
 ## Expected Loads Schema
 
@@ -71,26 +126,28 @@ CREATE TABLE loads (
 );
 ```
 
-For real customer deployments, use a read-only database user for `LOADS_DATABASE_URL`. If the customer's internal schema differs, expose a database view named `loads` with the schema above.
+If the customer's internal schema differs, expose a database view named `loads` with the schema above.
 
 ## API Endpoints
 
-Public:
+Browser and health routes:
 
 ```text
-GET /
-GET /health
+GET  /
+GET  /login
+POST /login
+GET  /logout
+GET  /health
 ```
 
-Protected with `x-api-key`:
+Protected with `x-api-key`, query `api_key`, or dashboard cookie depending on the route:
 
 ```text
 POST /webhook/call-completed
 GET  /api/calls
 GET  /api/stats
-GET  /events?api_key=...
+GET  /events
 GET  /api/loads/search
-GET  /api/loads/{load_id}
 POST /admin/seed-loads
 ```
 
@@ -116,15 +173,6 @@ Example:
 
 ```text
 /api/loads/search?origin=Dallas&destination=Atlanta&equipment_type=dry_van
-```
-
-### Get Load Details
-
-```text
-Method: GET
-URL: https://<service-url>/api/loads/{load_id}
-Headers:
-  x-api-key: <API_KEY>
 ```
 
 ### Send Completed Call Data
@@ -176,12 +224,40 @@ Example body:
 }
 ```
 
+## Dashboard
+
+The dashboard is served by FastAPI:
+
+- `/login` serves the login page.
+- `/` serves `dashboard.html` after login.
+- `/static` serves dashboard logos and static assets.
+- The browser calls `/api/stats`, `/api/calls`, and `/events` after login.
+
+Main metrics shown:
+
+- Total calls
+- Booking rate
+- Abandonment rate
+- Average duration
+- Average P70 latency
+- Average negotiation rounds
+- Outcome distribution
+- Carrier sentiment distribution
+- Negotiation performance
+- Recent calls table and call inspector
+
 ## Local Development
 
 Create `.env` from `.env.example`:
 
 ```powershell
 Copy-Item .env.example .env
+```
+
+For Docker/local PoC usage, prefer:
+
+```text
+DATABASE_URL=sqlite:///./data/calls.db
 ```
 
 Run with Docker Compose:
@@ -220,8 +296,10 @@ Environment variables:
 
 ```text
 API_KEY=<long-random-secret>
-LOADS_DATABASE_URL=<internal Render Postgres URL for demo loads>
-DATABASE_URL=sqlite:///./data/calls.db
+DASHBOARD_USERNAME=<dashboard-user>
+DASHBOARD_PASSWORD=<dashboard-password>
+LOADS_DATABASE_URL=<customer-loads-postgres-url>
+DATABASE_URL=<analytics-postgres-url-or-sqlite-with-persistent-disk>
 ```
 
 Render provides HTTPS and injects `PORT` automatically.
@@ -247,17 +325,25 @@ Expected response:
 ## Security Notes
 
 - All deployed traffic should use HTTPS. Render provides HTTPS by default.
-- API endpoints require `x-api-key`.
-- The dashboard route requires sign-in at `/login` and then uses same-origin HttpOnly cookies for dashboard API reads.
+- HappyRobot webhook and protected API calls use `x-api-key`.
+- Dashboard login uses HttpOnly same-origin cookies for dashboard API reads.
 - Secrets are injected through environment variables, not committed to Git.
 - The customer loads database should be accessed with a read-only user.
+- CORS is currently configured as `*` for the PoC. Restrict it for production deployments.
+- FMCSA carrier verification, if enabled, should keep the FMCSA API key in the HappyRobot/workflow environment.
 
 ## Portability
 
-The same Docker image can run in Render, Azure Container Apps, AWS ECS, Google Cloud Run, or a customer-owned environment. To point the container at a customer database, change only environment variables, primarily:
+The same Docker image can run in Render, Azure Container Apps, AWS ECS, Google Cloud Run, or a customer-owned environment.
+
+To point the container at customer infrastructure, change environment variables only:
 
 ```text
 LOADS_DATABASE_URL
+DATABASE_URL
+API_KEY
+DASHBOARD_USERNAME
+DASHBOARD_PASSWORD
 ```
 
 No code changes are required as long as the customer exposes the expected `loads` table schema.
