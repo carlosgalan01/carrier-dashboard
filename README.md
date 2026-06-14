@@ -42,7 +42,6 @@ DASHBOARD_USERNAME=admin
 DASHBOARD_PASSWORD=your-dashboard-password
 DATABASE_URL=sqlite:///./data/calls.db
 LOADS_DATABASE_URL=postgresql://user:password@host:5432/dbname
-PORT=8000
 ```
 
 `API_KEY` is required. HappyRobot and scripts use it as:
@@ -57,7 +56,7 @@ x-api-key: your-secret-api-key
 
 `LOADS_DATABASE_URL` points to the customer's PostgreSQL database containing the `loads` table. The application treats this database as read-only for normal agent workflows.
 
-`PORT` is usually injected by the hosting provider. Render provides it automatically.
+The container command supports `PORT`, but it does not need to be configured manually for normal deployments. Render injects it automatically, and the Dockerfile falls back to `8000` when `PORT` is not set.
 
 Optional workflow-side variable:
 
